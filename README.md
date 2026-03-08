@@ -174,7 +174,8 @@ swap Claude for another VLM, or add new nodes without touching existing ones.
 
 
 
-<img width="1245" height="521" alt="image" src="https://github.com/user-attachments/assets/b0a668ed-433b-4ee8-8841-bb9f6a8500c6" />
+<img width="1012" height="452" alt="image" src="https://github.com/user-attachments/assets/2646b9cc-464b-4158-917f-83142dd088d6" />
+
 
 ---
 
