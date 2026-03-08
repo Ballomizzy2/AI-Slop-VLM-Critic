@@ -1,4 +1,4 @@
-# Critic Pipeline
+# GenAI Video Critic Pipeline
 
 > An AI critic that reviews generated videos and outputs structured quality reports.
 > Evaluates technical quality, **authenticity** (human vs AI slop), and **audience fit**.
