@@ -172,6 +172,10 @@ frames/audio    frame scores     transcript      final report
 Each node is independently replaceable — swap Whisper for another STT,  
 swap Claude for another VLM, or add new nodes without touching existing ones.
 
+
+
+<img width="1245" height="521" alt="image" src="https://github.com/user-attachments/assets/b0a668ed-433b-4ee8-8841-bb9f6a8500c6" />
+
 ---
 
 ## Project Structure
