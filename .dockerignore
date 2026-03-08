@@ -1,0 +1,14 @@
+# Don't ship these into the image
+.env
+__tmp*
+*.pptx
+uploads/
+output/
+__pycache__/
+*.pyc
+*.pyo
+.DS_Store
+.git/
+.gitignore
+*.md
+input/

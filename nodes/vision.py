@@ -18,7 +18,7 @@ import re
 from typing import Any
 import anthropic
 
-MAX_FRAMES = int(os.environ.get("MAX_VISION_FRAMES", 8))
+MAX_FRAMES = int(os.environ.get("MAX_VISION_FRAMES") or os.environ.get("MAX_FRAMES", "8"))
 
 
 def encode_image(path: str) -> str:
