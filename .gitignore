@@ -1,0 +1,9 @@
+﻿.env
+__tmp*
+*.pptx
+uploads/
+output/
+__pycache__/
+*.pyc
+*.pyo
+.DS_Store

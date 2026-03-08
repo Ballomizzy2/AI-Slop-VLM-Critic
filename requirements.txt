@@ -1,0 +1,17 @@
+# ── Core pipeline ─────────────────────────────
+anthropic>=0.25.0          # Claude Vision + LLM critic
+langgraph>=0.1.0           # Agent orchestration
+langchain-core>=0.2.0      # LangGraph dependency
+
+# ── Audio / Speech ────────────────────────────
+openai-whisper>=20231117   # Local speech-to-text (pip install openai-whisper)
+numpy>=1.24.0              # Whisper dependency
+
+# ── Utilities ─────────────────────────────────
+Pillow>=10.0.0             # Image processing
+python-dotenv>=1.0.0       # .env file loading
+
+# ── System dependencies (install separately) ──
+# ffmpeg  → winget install ffmpeg  (Windows)
+#         → brew install ffmpeg    (Mac)
+# torch   → pip install torch      (required by Whisper, auto-installed)

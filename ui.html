@@ -1,0 +1,915 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Critic Pipeline</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.development.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.development.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:      #0a0a0a;
+    --surface: #111111;
+    --card:    #181818;
+    --border:  #262626;
+    --border2: #333333;
+    --accent:  #ffffff;
+    --red:     #ef4444;
+    --green:   #22c55e;
+    --white:   #fafafa;
+    --gray:    #737373;
+    --gray2:   #a3a3a3;
+    --gray3:   #525252;
+  }
+
+  html, body, #root { height: 100%; }
+
+  body {
+    background: var(--bg);
+    color: var(--white);
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    overflow: hidden;
+  }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-track { background: var(--surface); }
+  ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+
+  @keyframes pulse-ring {
+    0%   { transform: scale(1);    opacity: 0.6; }
+    100% { transform: scale(1.6);  opacity: 0; }
+  }
+
+  @keyframes scan {
+    0%   { transform: translateY(-100%); }
+    100% { transform: translateY(400%); }
+  }
+
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  @keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0; }
+  }
+
+  .fade-up { animation: fadeUp 0.3s ease forwards; }
+
+  .cursor-blink {
+    display: inline-block;
+    width: 8px; height: 14px;
+    background: var(--white);
+    margin-left: 2px;
+    vertical-align: middle;
+    animation: blink 1s step-end infinite;
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState, useEffect, useRef, useCallback } = React;
+
+const API = window.location.origin;
+
+// ── Icons (inline SVG) ────────────────────────────────────────────────────
+const Icon = ({ d, size = 16, color = "currentColor", strokeWidth = 1.5 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+    stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">
+    <path d={d} />
+  </svg>
+);
+
+const ICONS = {
+  upload:   "M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12",
+  video:    "M15 10l4.553-2.069A1 1 0 0121 8.845v6.31a1 1 0 01-1.447.894L15 14M3 8a2 2 0 012-2h10a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z",
+  check:    "M20 6L9 17l-5-5",
+  x:        "M18 6L6 18M6 6l12 12",
+  alert:    "M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0zM12 9v4M12 17h.01",
+  refresh:  "M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15",
+  cpu:      "M12 2a10 10 0 100 20A10 10 0 0012 2zM2 12h2M20 12h2M12 2v2M12 20v2M6.34 6.34L4.93 4.93M19.07 19.07l-1.41-1.41M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41",
+  eye:      "M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8M12 9a3 3 0 100 6 3 3 0 000-6z",
+  music:    "M9 18V5l12-2v13M9 18a3 3 0 11-6 0 3 3 0 016 0zM21 16a3 3 0 11-6 0 3 3 0 016 0z",
+  layers:   "M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5",
+  terminal: "M4 17l6-6-6-6M12 19h8",
+  file:     "M13 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V9zM13 2v7h7",
+  arrow:    "M5 12h14M12 5l7 7-7 7",
+};
+
+// ── Verdict config ─────────────────────────────────────────────────────────
+const VERDICT_CONFIG = {
+  pass:   { color: "#22c55e", bg: "rgba(34,197,94,0.06)", label: "PASS",   icon: ICONS.check },
+  refine: { color: "#a3a3a3", bg: "rgba(163,163,163,0.06)", label: "REFINE", icon: ICONS.alert },
+  reject: { color: "#ef4444", bg: "rgba(239,68,68,0.06)",   label: "REJECT", icon: ICONS.x },
+};
+
+const SEVERITY_COLOR = { high: "#ef4444", medium: "#a3a3a3", low: "#737373" };
+
+const AUDIENCE_OPTIONS = [
+  { value: "general",     label: "General" },
+  { value: "technical",   label: "Technical" },
+  { value: "buyer",       label: "Buyer" },
+  { value: "casual",      label: "Casual / Entertainment" },
+  { value: "educational", label: "Educational" },
+];
+
+// ── Terminal Line ──────────────────────────────────────────────────────────
+function TerminalLine({ kind, text, idx }) {
+  const colors = {
+    info:    "#737373",
+    log:     "#a3a3a3",
+    node:    "#d4d4d4",
+    success: "#22c55e",
+    error:   "#ef4444",
+    verdict: "#fafafa",
+  };
+  const col = colors[kind] || colors.log;
+  return (
+    <div className="fade-up" style={{
+      display: "flex", gap: 10, padding: "2px 0",
+      animationDelay: `${Math.min(idx * 0.02, 0.3)}s`,
+      opacity: 0,
+    }}>
+      <span style={{ color: "var(--gray)", fontFamily: "JetBrains Mono", fontSize: 11, flexShrink: 0, userSelect: "none" }}>
+        {String(idx + 1).padStart(3, "0")}
+      </span>
+      <span style={{ color: col, fontFamily: "JetBrains Mono", fontSize: 12, whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
+        {text}
+      </span>
+    </div>
+  );
+}
+
+// ── Score Ring ─────────────────────────────────────────────────────────────
+function ScoreRing({ score }) {
+  const r = 44, circ = 2 * Math.PI * r;
+  const filled = (score / 100) * circ;
+  const col = score >= 80 ? "#22c55e" : score >= 50 ? "#a3a3a3" : "#ef4444";
+  return (
+    <div style={{ position: "relative", width: 110, height: 110, flexShrink: 0 }}>
+      <svg width={110} height={110} style={{ transform: "rotate(-90deg)" }}>
+        <circle cx={55} cy={55} r={r} fill="none" stroke="var(--border2)" strokeWidth={6} />
+        <circle cx={55} cy={55} r={r} fill="none" stroke={col} strokeWidth={6}
+          strokeDasharray={`${filled} ${circ - filled}`}
+          strokeLinecap="round"
+          style={{ transition: "stroke-dasharray 1s ease" }}
+        />
+      </svg>
+      <div style={{
+        position: "absolute", inset: 0, display: "flex", flexDirection: "column",
+        alignItems: "center", justifyContent: "center"
+      }}>
+        <span style={{ fontFamily: "JetBrains Mono", fontSize: 26, fontWeight: 700, color: col }}>{score}</span>
+        <span style={{ fontSize: 10, color: "var(--gray)", fontFamily: "JetBrains Mono" }}>/100</span>
+      </div>
+    </div>
+  );
+}
+
+// ── Parse timestamp values (supports HH:MM:SS, MM:SS, ranges, and plain seconds) ──
+function parseTimeToken(token) {
+  if (token == null) return null;
+  const str = String(token).trim();
+  if (!str) return null;
+
+  const parts = str.split(":");
+  if (parts.length === 1) {
+    const sec = parseFloat(parts[0]);
+    return Number.isFinite(sec) ? Math.max(0, sec) : null;
+  }
+
+  if (parts.length === 2 || parts.length === 3) {
+    const vals = parts.map((p, i) => (i === parts.length - 1 ? parseFloat(p) : parseInt(p, 10)));
+    if (vals.some(v => !Number.isFinite(v))) return null;
+    if (parts.length === 2) return Math.max(0, vals[0] * 60 + vals[1]);
+    return Math.max(0, vals[0] * 3600 + vals[1] * 60 + vals[2]);
+  }
+
+  return null;
+}
+
+function timestampToSeconds(ts) {
+  if (ts == null) return null;
+  if (typeof ts === "number") return Number.isFinite(ts) ? Math.max(0, ts) : null;
+
+  const str = String(ts).trim();
+  if (!str) return null;
+
+  const normalized = str.replace(/[–—]/g, "-");
+  const rangeMatch = normalized.match(/([0-9]+(?::[0-9]+){0,2}(?:\.[0-9]+)?)\s*-\s*([0-9]+(?::[0-9]+){0,2}(?:\.[0-9]+)?)/);
+  if (rangeMatch) return parseTimeToken(rangeMatch[1]);
+
+  const firstTimeToken = normalized.match(/[0-9]+(?::[0-9]+){0,2}(?:\.[0-9]+)?/);
+  return firstTimeToken ? parseTimeToken(firstTimeToken[0]) : null;
+}
+
+// ── Issue Card ─────────────────────────────────────────────────────────────
+function IssueCard({ issue, idx, onSeek, hasVideo }) {
+  const col = SEVERITY_COLOR[issue.severity] || "#94a3b8";
+  const rawTimestamp = issue.timestamp ?? issue.timecode ?? issue.start_time ?? issue.startTime;
+  const seconds = timestampToSeconds(rawTimestamp);
+  const isClickable = hasVideo && Number.isFinite(seconds) && typeof onSeek === "function";
+  const handleSeek = () => {
+    if (!isClickable) return;
+    onSeek(seconds);
+  };
+  return (
+    <div
+      className="fade-up"
+      data-seek-to={isClickable ? seconds : undefined}
+      onClick={isClickable ? (e) => { e.preventDefault(); handleSeek(); } : undefined}
+      role={isClickable ? "button" : undefined}
+      tabIndex={isClickable ? 0 : undefined}
+      onKeyDown={isClickable ? (e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          handleSeek();
+        }
+      } : undefined}
+      style={{
+        background: "var(--card)", border: `1px solid var(--border)`,
+        borderRadius: 8, padding: "14px 16px", marginBottom: 10,
+        borderLeft: `3px solid ${col}`,
+        animationDelay: `${idx * 0.1}s`, opacity: 0,
+        cursor: isClickable ? "pointer" : "default",
+        transition: "background 0.15s",
+      }}
+      onMouseEnter={e => isClickable && (e.currentTarget.style.background = "var(--surface)")}
+      onMouseLeave={e => isClickable && (e.currentTarget.style.background = "var(--card)")}
+    >
+      <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
+        <span style={{
+          background: `${col}20`, color: col, border: `1px solid ${col}40`,
+          borderRadius: 4, padding: "2px 8px", fontSize: 10,
+          fontFamily: "JetBrains Mono", fontWeight: 700, letterSpacing: 1,
+        }}>{issue.severity?.toUpperCase()}</span>
+        <span style={{
+          background: "var(--border)", color: "var(--gray2)",
+          borderRadius: 4, padding: "2px 8px", fontSize: 10,
+          fontFamily: "JetBrains Mono",
+        }}>{issue.type?.replace("_", " ")}</span>
+        <span style={{
+          marginLeft: "auto", color: isClickable ? "var(--white)" : "var(--gray)",
+          fontSize: 11, fontFamily: "JetBrains Mono",
+          display: "flex", alignItems: "center", gap: 4,
+        }}>
+          {rawTimestamp || "N/A"}
+          {isClickable && <span style={{ fontSize: 9, opacity: 0.7 }}>↗ jump</span>}
+        </span>
+      </div>
+      <p style={{ fontSize: 13, color: "var(--gray2)", marginBottom: 6 }}>{issue.description}</p>
+      <div style={{ display: "flex", gap: 6, alignItems: "flex-start" }}>
+        <Icon d={ICONS.arrow} size={13} color="var(--gray2)" />
+        <p style={{ fontSize: 12, color: "var(--gray2)", fontFamily: "JetBrains Mono" }}>{issue.recommendation}</p>
+      </div>
+    </div>
+  );
+}
+
+// ── Drop Zone ──────────────────────────────────────────────────────────────
+function DropZone({ onFile, disabled }) {
+  const [dragging, setDragging] = useState(false);
+  const inputRef = useRef();
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    setDragging(false);
+    const file = e.dataTransfer.files[0];
+    if (file && file.type.startsWith("video/")) onFile(file);
+  };
+
+  return (
+    <div
+      onClick={() => !disabled && inputRef.current.click()}
+      onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+      onDragLeave={() => setDragging(false)}
+      onDrop={handleDrop}
+      style={{
+        border: `2px dashed ${dragging ? "var(--gray2)" : "var(--border2)"}`,
+        borderRadius: 12, padding: "40px 24px", textAlign: "center",
+        cursor: disabled ? "not-allowed" : "pointer",
+        background: dragging ? "var(--surface)" : "var(--card)",
+        transition: "all 0.2s", opacity: disabled ? 0.5 : 1,
+      }}
+    >
+      <input ref={inputRef} type="file" accept="video/*" style={{ display: "none" }}
+        onChange={(e) => e.target.files[0] && onFile(e.target.files[0])} />
+      <div style={{ marginBottom: 12 }}>
+        <Icon d={ICONS.video} size={36} color={dragging ? "var(--white)" : "var(--gray)"} />
+      </div>
+      <p style={{ color: "var(--white)", fontWeight: 600, marginBottom: 6 }}>
+        Drop a video or click to browse
+      </p>
+      <p style={{ color: "var(--gray)", fontSize: 13 }}>MP4, MOV, WebM — any generated video</p>
+    </div>
+  );
+}
+
+// ── Node Status Row ────────────────────────────────────────────────────────
+function PipelineNodes({ logs }) {
+  const text = logs.map(l => l.text).join("\n");
+  const nodes = [
+    { id: "ingest", label: "INGEST",  tech: "FFmpeg",        icon: ICONS.file,    trigger: "[ingest]" },
+    { id: "vision", label: "VISION",  tech: "Claude Vision", icon: ICONS.eye,     trigger: "[vision]" },
+    { id: "audio",  label: "AUDIO",   tech: "Whisper",       icon: ICONS.music,   trigger: "[audio]"  },
+    { id: "critic", label: "CRITIC",  tech: "Claude LLM",    icon: ICONS.cpu,     trigger: "[critic]" },
+  ];
+
+  const getStatus = (n) => {
+    if (!text.includes(n.trigger)) return "waiting";
+    const afterTrigger = text.split(n.trigger).slice(1).join("");
+    const nextNodeIdx = nodes.findIndex(x => x.id === n.id) + 1;
+    if (nextNodeIdx < nodes.length) {
+      const nextTrigger = nodes[nextNodeIdx].trigger;
+      if (text.includes(nextTrigger) || text.includes("VERDICT")) return "done";
+    } else {
+      if (text.includes("VERDICT") || text.includes("done")) return "done";
+    }
+    return "running";
+  };
+
+  const COLORS = { waiting: "var(--border2)", running: "var(--white)", done: "var(--green)" };
+
+  return (
+    <div style={{ display: "flex", gap: 0, marginBottom: 16 }}>
+      {nodes.map((n, i) => {
+        const status = getStatus(n);
+        const col = COLORS[status];
+        return (
+          <React.Fragment key={n.id}>
+            <div style={{
+              flex: 1, background: "var(--card)", border: `1px solid ${status === "waiting" ? "var(--border)" : col}`,
+              borderRadius: i === 0 ? "8px 0 0 8px" : i === nodes.length - 1 ? "0 8px 8px 0" : "0",
+              padding: "10px 8px", textAlign: "center",
+              transition: "all 0.3s",
+              boxShadow: status === "running" ? `0 0 12px ${col}40` : "none",
+            }}>
+              <div style={{ marginBottom: 4 }}>
+                <Icon d={n.icon} size={16} color={col} />
+              </div>
+              <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1.5, color: col, fontFamily: "JetBrains Mono" }}>
+                {n.label}
+              </div>
+              <div style={{ fontSize: 9, color: "var(--gray)", fontFamily: "JetBrains Mono", marginTop: 2 }}>
+                {n.tech}
+              </div>
+              {status === "running" && (
+                <div style={{
+                  width: 6, height: 6, borderRadius: "50%", background: col,
+                  margin: "4px auto 0", position: "relative",
+                }}>
+                  <div style={{
+                    position: "absolute", inset: -3, borderRadius: "50%", border: `1px solid ${col}`,
+                    animation: "pulse-ring 1s ease-out infinite",
+                  }} />
+                </div>
+              )}
+            </div>
+            {i < nodes.length - 1 && (
+              <div style={{
+                width: 1, background: status === "done" ? "var(--green)" : "var(--border)",
+                alignSelf: "stretch", transition: "background 0.3s",
+              }} />
+            )}
+          </React.Fragment>
+        );
+      })}
+    </div>
+  );
+}
+
+// ── Main App ───────────────────────────────────────────────────────────────
+function App() {
+  const [file, setFile] = useState(null);
+  const [jobId, setJobId] = useState(null);
+  const [status, setStatus] = useState("idle"); // idle | uploading | running | done | error
+  const [logs, setLogs] = useState([]);
+  const [report, setReport] = useState(null);
+  const [videoUrl, setVideoUrl] = useState(null);
+  const [audience, setAudience] = useState("general");
+  const [activeTab, setActiveTab] = useState("terminal");
+  const terminalRef = useRef();
+  const videoRef = useRef();
+  const pendingSeekRef = useRef(null);
+  const eventSourceRef = useRef();
+  const uploadedFilenameRef = useRef(null);
+
+  const scrollTerminal = () => {
+    if (terminalRef.current) {
+      terminalRef.current.scrollTop = terminalRef.current.scrollHeight;
+    }
+  };
+
+  useEffect(scrollTerminal, [logs]);
+
+  const addLog = (kind, text) => {
+    setLogs(prev => [...prev, { kind, text }]);
+  };
+
+  const reset = () => {
+    if (eventSourceRef.current) eventSourceRef.current.close();
+    uploadedFilenameRef.current = null;
+    setFile(null); setJobId(null); setStatus("idle");
+    setLogs([]); setReport(null); setVideoUrl(null); setActiveTab("terminal");
+  };
+
+  const seekTo = useCallback((targetSeconds) => {
+    const video = videoRef.current;
+    if (!video || !Number.isFinite(targetSeconds) || targetSeconds < 0) return;
+
+    const applySeek = (sec) => {
+      const safeTarget = (Number.isFinite(video.duration) && video.duration > 0)
+        ? Math.min(sec, Math.max(0, video.duration - 0.05))
+        : sec;
+      try {
+        if (typeof video.fastSeek === "function") {
+          video.fastSeek(safeTarget);
+        } else {
+          video.currentTime = safeTarget;
+        }
+      } catch {
+        video.currentTime = safeTarget;
+      }
+      const playAttempt = video.play();
+      if (playAttempt && typeof playAttempt.catch === "function") {
+        playAttempt.catch(() => {});
+      }
+    };
+
+    if (video.readyState >= 1) {
+      applySeek(targetSeconds);
+      pendingSeekRef.current = null;
+    } else {
+      const onReady = () => {
+        const pending = Number.isFinite(pendingSeekRef.current) ? pendingSeekRef.current : targetSeconds;
+        applySeek(pending);
+        pendingSeekRef.current = null;
+      };
+      pendingSeekRef.current = targetSeconds;
+      video.addEventListener("loadedmetadata", onReady, { once: true });
+      if (video.readyState === 0) video.load();
+    }
+  }, []);
+
+  const run = useCallback(async (selectedFile) => {
+    setFile(selectedFile);
+    uploadedFilenameRef.current = selectedFile.name;
+    setStatus("uploading");
+    setLogs([]);
+    setReport(null);
+    setVideoUrl(null);
+    setActiveTab("terminal");
+
+    addLog("info", `Uploading ${selectedFile.name}...`);
+
+    const form = new FormData();
+    form.append("video", selectedFile);
+    form.append("audience", audience);
+
+    let jobId;
+    try {
+      const res = await fetch(`${API}/api/run`, { method: "POST", body: form });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      jobId = data.job_id;
+      setJobId(jobId);
+      setStatus("running");
+      addLog("success", `Job started: ${jobId}`);
+    } catch (e) {
+      setStatus("error");
+      addLog("error", `Failed to start: ${e.message}`);
+      return;
+    }
+
+    // Open SSE stream
+    const es = new EventSource(`${API}/api/stream/${jobId}`);
+    eventSourceRef.current = es;
+
+    es.onmessage = (e) => {
+      if (e.data === "__END__") {
+        es.close();
+        return;
+      }
+      try {
+        const msg = JSON.parse(e.data);
+        if (msg.kind === "done") {
+          setReport(msg.report);
+          const vidUrl = msg.video_url
+            ? `${window.location.origin}${msg.video_url}`
+            : (uploadedFilenameRef.current ? `${API}/uploads/${encodeURIComponent(uploadedFilenameRef.current)}` : null);
+          setVideoUrl(vidUrl);
+          setStatus("done");
+          setActiveTab("report");
+          addLog("success", "✅ Pipeline complete!");
+        } else if (msg.kind === "error") {
+          setStatus("error");
+          addLog("error", msg.text);
+        } else {
+          addLog(msg.kind, msg.text);
+        }
+      } catch {}
+    };
+
+    es.onerror = () => {
+      es.close();
+      if (status !== "done") {
+        setStatus("error");
+        addLog("error", "Connection lost");
+      }
+    };
+  }, []);
+
+  const verdictConf = report ? (VERDICT_CONFIG[report.verdict] || VERDICT_CONFIG.refine) : null;
+
+  return (
+    <div style={{
+      height: "100vh", display: "flex", flexDirection: "column",
+      background: "var(--bg)", overflow: "hidden",
+    }}>
+
+      {/* ── Header ── */}
+      <div style={{
+        display: "flex", alignItems: "center", gap: 16,
+        padding: "0 24px", height: 52, borderBottom: "1px solid var(--border)",
+        background: "var(--surface)", flexShrink: 0,
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <div style={{
+            width: 28, height: 28, borderRadius: 6,
+            background: "var(--card)",
+            border: "1px solid var(--border)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }}>
+            <Icon d={ICONS.eye} size={14} color="var(--white)" />
+          </div>
+          <span style={{ fontWeight: 600, fontSize: 15, letterSpacing: "-0.3px" }}>Critic Pipeline</span>
+          <span style={{
+            background: "var(--border)", color: "var(--gray)", borderRadius: 4,
+            padding: "1px 7px", fontSize: 10, fontFamily: "JetBrains Mono", letterSpacing: 1,
+          }}>v1.0</span>
+        </div>
+
+        <div style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center" }}>
+          {status === "running" && (
+            <div style={{ display: "flex", gap: 6, alignItems: "center", color: "var(--gray2)", fontSize: 12 }}>
+              <div style={{
+                width: 8, height: 8, borderRadius: "50%", background: "var(--white)",
+                animation: "blink 1s step-end infinite",
+              }} />
+              Running
+            </div>
+          )}
+          {status === "done" && (
+            <div style={{ display: "flex", gap: 6, alignItems: "center", color: "var(--green)", fontSize: 12 }}>
+              <Icon d={ICONS.check} size={13} color="var(--green)" /> Done
+            </div>
+          )}
+          {(status === "done" || status === "error") && (
+            <button onClick={reset} style={{
+              background: "var(--border)", border: "1px solid var(--border2)",
+              color: "var(--gray2)", borderRadius: 6, padding: "5px 12px",
+              cursor: "pointer", fontSize: 12, fontFamily: "Inter",
+              display: "flex", gap: 6, alignItems: "center",
+            }}>
+              <Icon d={ICONS.refresh} size={12} /> New Run
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* ── Body ── */}
+      <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
+
+        {/* ── Left panel: Input ── */}
+        <div style={{
+          width: 300, flexShrink: 0, borderRight: "1px solid var(--border)",
+          padding: 20, overflowY: "auto", background: "var(--surface)",
+          display: "flex", flexDirection: "column", gap: 20,
+        }}>
+          <div>
+            <div style={{ fontSize: 11, fontFamily: "JetBrains Mono", color: "var(--gray)", letterSpacing: 2, marginBottom: 10 }}>
+              AUDIENCE
+            </div>
+            <select
+              value={audience}
+              onChange={(e) => setAudience(e.target.value)}
+              disabled={status === "running"}
+              style={{
+                width: "100%", padding: "10px 12px", borderRadius: 8,
+                border: "1px solid var(--border)", background: "var(--card)",
+                color: "var(--text)", fontSize: 13, fontFamily: "Inter",
+                cursor: status === "running" ? "not-allowed" : "pointer",
+              }}
+            >
+              {AUDIENCE_OPTIONS.map(({ value, label }) => (
+                <option key={value} value={value}>{label}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <div style={{ fontSize: 11, fontFamily: "JetBrains Mono", color: "var(--gray)", letterSpacing: 2, marginBottom: 10 }}>
+              INPUT
+            </div>
+
+            {status === "idle" || status === "error" ? (
+              <DropZone onFile={run} disabled={false} />
+            ) : (
+              <div style={{
+                background: "var(--card)", border: "1px solid var(--border)",
+                borderRadius: 10, padding: 16,
+              }}>
+                <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 10 }}>
+                  <div style={{
+                    width: 36, height: 36, background: "var(--surface)",
+                    border: "1px solid var(--border)",
+                    borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center",
+                    flexShrink: 0,
+                  }}>
+                    <Icon d={ICONS.video} size={18} color="var(--gray2)" />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 600, wordBreak: "break-all" }}>{file?.name}</div>
+                    <div style={{ fontSize: 11, color: "var(--gray)", fontFamily: "JetBrains Mono" }}>
+                      {file ? (file.size / 1024 / 1024).toFixed(1) + " MB" : ""}
+                    </div>
+                  </div>
+                </div>
+                <div style={{
+                  height: 3, background: "var(--border)", borderRadius: 2, overflow: "hidden",
+                }}>
+                  <div style={{
+                    height: "100%", borderRadius: 2,
+                    background: status === "done" ? "var(--green)" :
+                                status === "error" ? "var(--red)" : "var(--gray2)",
+                    width: status === "done" || status === "error" ? "100%" : "60%",
+                    transition: "width 0.5s ease",
+                  }} />
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* What it checks */}
+          <div>
+            <div style={{ fontSize: 11, fontFamily: "JetBrains Mono", color: "var(--gray)", letterSpacing: 2, marginBottom: 12 }}>
+              EVALUATES
+            </div>
+            {[
+              { label: "Text accuracy",   icon: ICONS.file },
+              { label: "Visual quality",  icon: ICONS.eye },
+              { label: "Pacing",          icon: ICONS.layers },
+              { label: "Consistency",     icon: ICONS.cpu },
+              { label: "Content safety",  icon: ICONS.alert },
+              { label: "Audio / speech",  icon: ICONS.music },
+            ].map(({ label, icon }) => (
+              <div key={label} style={{
+                display: "flex", gap: 10, alignItems: "center",
+                padding: "7px 0", borderBottom: "1px solid var(--border)",
+              }}>
+                <Icon d={icon} size={14} color="var(--gray2)" />
+                <span style={{ fontSize: 13, color: "var(--gray2)" }}>{label}</span>
+              </div>
+            ))}
+          </div>
+
+          {/* Verdict legend */}
+          <div>
+            <div style={{ fontSize: 11, fontFamily: "JetBrains Mono", color: "var(--gray)", letterSpacing: 2, marginBottom: 12 }}>
+              VERDICTS
+            </div>
+            {Object.entries(VERDICT_CONFIG).map(([key, v]) => (
+              <div key={key} style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 8 }}>
+                <span style={{
+                  background: `${v.color}15`, color: v.color,
+                  border: `1px solid ${v.color}40`,
+                  borderRadius: 4, padding: "2px 8px", fontSize: 10,
+                  fontFamily: "JetBrains Mono", fontWeight: 700, letterSpacing: 1,
+                  width: 58, textAlign: "center",
+                }}>{v.label}</span>
+                <span style={{ fontSize: 12, color: "var(--gray)" }}>
+                  {key === "pass" ? "Ship it" : key === "refine" ? "Fix specific issues" : "Regenerate clip"}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* ── Main panel ── */}
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+
+          {/* Tab bar */}
+          <div style={{
+            display: "flex", gap: 0, borderBottom: "1px solid var(--border)",
+            background: "var(--surface)", flexShrink: 0, padding: "0 20px",
+          }}>
+            {[
+              { id: "terminal", label: "Terminal", icon: ICONS.terminal },
+              { id: "report",   label: "Report",   icon: ICONS.file,   badge: report?.issues?.length },
+            ].map(tab => (
+              <button key={tab.id} onClick={() => setActiveTab(tab.id)} style={{
+                background: "none", border: "none", cursor: "pointer",
+                padding: "12px 16px", display: "flex", gap: 7, alignItems: "center",
+                fontSize: 13, fontFamily: "Inter", fontWeight: 500,
+                color: activeTab === tab.id ? "var(--white)" : "var(--gray)",
+                borderBottom: activeTab === tab.id ? "2px solid var(--white)" : "2px solid transparent",
+                transition: "color 0.15s",
+              }}>
+                <Icon d={tab.icon} size={13} color={activeTab === tab.id ? "var(--white)" : "var(--gray)"} />
+                {tab.label}
+                {tab.badge > 0 && (
+                  <span style={{
+                    background: "var(--red)", color: "white",
+                    borderRadius: 10, padding: "1px 6px", fontSize: 10,
+                    fontFamily: "JetBrains Mono",
+                  }}>{tab.badge}</span>
+                )}
+              </button>
+            ))}
+          </div>
+
+          {/* Terminal tab */}
+          {activeTab === "terminal" && (
+            <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+              {/* Pipeline node status */}
+              {status !== "idle" && (
+                <div style={{ padding: "12px 20px 0", flexShrink: 0 }}>
+                  <PipelineNodes logs={logs} />
+                </div>
+              )}
+
+              {/* Terminal output */}
+              <div ref={terminalRef} style={{
+                flex: 1, overflowY: "auto", padding: "16px 20px",
+                fontFamily: "JetBrains Mono",
+              }}>
+                {logs.length === 0 && status === "idle" && (
+                  <div style={{
+                    height: "100%", display: "flex", flexDirection: "column",
+                    alignItems: "center", justifyContent: "center", gap: 12,
+                    color: "var(--gray)",
+                  }}>
+                    <Icon d={ICONS.terminal} size={40} color="var(--border2)" />
+                    <p style={{ fontSize: 13 }}>Drop a video to start the pipeline</p>
+                    <p style={{ fontSize: 11, opacity: 0.6, fontFamily: "JetBrains Mono" }}>
+                      $ critic --input video.mp4
+                    </p>
+                  </div>
+                )}
+                {logs.map((l, i) => (
+                  <TerminalLine key={i} kind={l.kind} text={l.text} idx={i} />
+                ))}
+                {status === "running" && (
+                  <div style={{ padding: "4px 0" }}>
+                    <span style={{ color: "var(--gray)", fontFamily: "JetBrains Mono", fontSize: 11 }}>
+                      {String(logs.length + 1).padStart(3, "0")}
+                    </span>
+                    <span className="cursor-blink" style={{ marginLeft: 10 }} />
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Report tab */}
+          {activeTab === "report" && (
+            <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
+              {!report ? (
+                <div style={{
+                  flex: 1, display: "flex", flexDirection: "column",
+                  alignItems: "center", justifyContent: "center", gap: 12, color: "var(--gray)",
+                }}>
+                  <Icon d={ICONS.file} size={40} color="var(--border2)" />
+                  <p style={{ fontSize: 13 }}>Report will appear here once the pipeline finishes.</p>
+                </div>
+              ) : (
+                <>
+                  {/* Video player (left side) */}
+                  {videoUrl && (
+                    <div style={{
+                      width: 360, flexShrink: 0, padding: 16, borderRight: "1px solid var(--border)",
+                      background: "var(--surface)", display: "flex", flexDirection: "column",
+                    }}>
+                      <div style={{ fontSize: 11, fontFamily: "JetBrains Mono", color: "var(--gray)", letterSpacing: 2, marginBottom: 10 }}>
+                        VIDEO
+                      </div>
+                      <div style={{
+                        flex: 1, minHeight: 200, background: "var(--card)", borderRadius: 8,
+                        overflow: "hidden", border: "1px solid var(--border)",
+                      }}>
+                        <video
+                          ref={videoRef}
+                          src={videoUrl}
+                          controls
+                          style={{ width: "100%", height: "100%", display: "block" }}
+                          preload="auto"
+                        />
+                      </div>
+                      <p style={{ fontSize: 11, color: "var(--gray)", marginTop: 8 }}>
+                        Click an issue timestamp to jump to that moment
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Report (right side) */}
+                  <div style={{ flex: 1, overflowY: "auto", padding: 20 }}>
+                    <div style={{ maxWidth: 640 }}>
+
+                  {/* Verdict banner */}
+                  <div className="fade-up" style={{
+                    background: verdictConf.bg,
+                    border: `1px solid ${verdictConf.color}30`,
+                    borderRadius: 12, padding: "20px 24px",
+                    display: "flex", gap: 20, alignItems: "center",
+                    marginBottom: 24, opacity: 0,
+                  }}>
+                    <ScoreRing score={report.score} />
+                    <div style={{ flex: 1 }}>
+                      <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 8 }}>
+                        <span style={{
+                          background: `${verdictConf.color}20`, color: verdictConf.color,
+                          border: `1px solid ${verdictConf.color}50`,
+                          borderRadius: 6, padding: "4px 12px", fontSize: 13,
+                          fontFamily: "JetBrains Mono", fontWeight: 700, letterSpacing: 2,
+                        }}>{verdictConf.label}</span>
+                        {report.retry && (
+                          <span style={{
+                            background: "var(--surface)", color: "var(--gray2)",
+                            border: "1px solid var(--border)",
+                            borderRadius: 6, padding: "4px 10px", fontSize: 11,
+                            fontFamily: "JetBrains Mono",
+                          }}>RETRY RECOMMENDED</span>
+                        )}
+                      </div>
+                      <p style={{ fontSize: 14, color: "var(--gray2)", lineHeight: 1.6 }}>{report.summary}</p>
+                    </div>
+                  </div>
+
+                  {/* Issues */}
+                  {report.issues?.length > 0 && (
+                    <div>
+                      <div style={{
+                        fontSize: 11, fontFamily: "JetBrains Mono", color: "var(--gray)",
+                        letterSpacing: 2, marginBottom: 14,
+                      }}>
+                        ISSUES FOUND ({report.issues.length})
+                      </div>
+                      {report.issues.map((issue, i) => (
+                        <IssueCard key={i} issue={issue} idx={i} onSeek={seekTo} hasVideo={!!videoUrl} />
+                      ))}
+                    </div>
+                  )}
+
+                  {report.issues?.length === 0 && (
+                    <div className="fade-up" style={{
+                      background: "rgba(34,197,94,0.06)", border: "1px solid rgba(34,197,94,0.2)",
+                      borderRadius: 10, padding: 20, textAlign: "center", opacity: 0,
+                    }}>
+                      <Icon d={ICONS.check} size={24} color="var(--green)" />
+                      <p style={{ marginTop: 10, color: "var(--gray2)", fontSize: 14 }}>No issues found — video passed all checks.</p>
+                    </div>
+                  )}
+
+                  {/* Raw JSON toggle */}
+                  <details style={{ marginTop: 24 }}>
+                    <summary style={{
+                      cursor: "pointer", fontSize: 11, color: "var(--gray)",
+                      fontFamily: "JetBrains Mono", letterSpacing: 2, marginBottom: 10,
+                      userSelect: "none",
+                    }}>
+                      RAW JSON ▾
+                    </summary>
+                    <pre style={{
+                      background: "var(--card)", border: "1px solid var(--border)",
+                      borderRadius: 8, padding: 16, fontSize: 11,
+                      fontFamily: "JetBrains Mono", color: "var(--gray2)",
+                      overflowX: "auto", whiteSpace: "pre-wrap",
+                    }}>
+                      {JSON.stringify(report, null, 2)}
+                    </pre>
+                  </details>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>
