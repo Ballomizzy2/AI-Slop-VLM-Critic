@@ -1,4 +1,4 @@
-# Critic Pipeline
+# GenAI Video Critic Pipeline
 
 > An AI critic that reviews generated videos and outputs structured quality reports.
 > Evaluates technical quality, **authenticity** (human vs AI slop), and **audience fit**.
@@ -75,8 +75,25 @@ python server.py
 # Open http://localhost:7474
 ```
 
-Drop a video, watch the pipeline run in the terminal, see the report.  
+Choose an audience
+
+<img width="345" height="285" alt="image" src="https://github.com/user-attachments/assets/6807710c-dec6-4cf4-9129-6b7570390b03" />
+
+Drop a video, 
+
+<img width="310" height="269" alt="image" src="https://github.com/user-attachments/assets/c85ba46f-85ce-4930-975a-9b1a46540d90" />
+
+watch the pipeline run in the terminal, see the report.  
+<img width="1822" height="788" alt="image" src="https://github.com/user-attachments/assets/fa679e15-9257-457b-b236-e918e80b2626" />
+<img width="1829" height="813" alt="image" src="https://github.com/user-attachments/assets/124c8b01-459c-4326-b9ab-bc2024847b26" />
+
+
+
 **Report tab:** Video plays on the left; click any issue to seek the video to that timestamp.
+
+<img width="1833" height="826" alt="image" src="https://github.com/user-attachments/assets/df41840b-a041-45b4-9610-ac2de90bf889" />
+
+
 
 ---
 
@@ -172,6 +189,11 @@ frames/audio    frame scores     transcript      final report
 Each node is independently replaceable — swap Whisper for another STT,  
 swap Claude for another VLM, or add new nodes without touching existing ones.
 
+
+
+<img width="1012" height="452" alt="image" src="https://github.com/user-attachments/assets/2646b9cc-464b-4158-917f-83142dd088d6" />
+
+
 ---
 
 ## Project Structure
@@ -208,3 +230,5 @@ Video Editor/
 | `WHISPER_MODEL` | base | Whisper model size |
 | `SILENCE_THRESHOLD_DB` | -35 | Silence detection threshold |
 | `MIN_SILENCE_DURATION` | 2.0 | Min silence (seconds) to flag |
+
+
