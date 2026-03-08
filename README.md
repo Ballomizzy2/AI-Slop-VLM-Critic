@@ -84,10 +84,10 @@ Drop a video,
 <img width="310" height="269" alt="image" src="https://github.com/user-attachments/assets/c85ba46f-85ce-4930-975a-9b1a46540d90" />
 
 watch the pipeline run in the terminal, see the report.  
-
+<img width="1822" height="788" alt="image" src="https://github.com/user-attachments/assets/fa679e15-9257-457b-b236-e918e80b2626" />
 <img width="1829" height="813" alt="image" src="https://github.com/user-attachments/assets/124c8b01-459c-4326-b9ab-bc2024847b26" />
 
-<img width="1822" height="788" alt="image" src="https://github.com/user-attachments/assets/fa679e15-9257-457b-b236-e918e80b2626" />
+
 
 **Report tab:** Video plays on the left; click any issue to seek the video to that timestamp.
 
